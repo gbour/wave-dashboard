@@ -1,0 +1,61 @@
+
+<html>
+<head>
+	<link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/morris.js/0.5.1/morris.css">
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+	<script src="http://cdnjs.cloudflare.com/ajax/libs/raphael/2.1.0/raphael-min.js"></script>
+	<script src="http://cdnjs.cloudflare.com/ajax/libs/morris.js/0.5.1/morris.min.js"></script>
+	<script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+
+	<script src="viz.js"></script>
+</head>
+<body>
+
+<h2>Sessions</h2>
+<div id="sessions" style="height: 250px; width: 400px"></div>
+
+<h2>received MQTT Messages</h2>
+<div id="publish" style="height: 250px; width: 400px"></div>
+
+<h1>Erlang VM</h1>
+<h2>Memory</h2>
+<div id="mem" style="height: 250px; width: 400px"></div>
+
+<h2>System</h2>
+<div id="sys" style="height: 250px; width: 400px"></div>
+
+</body>
+</html>
+
+<script>
+	var sessions = mkbar('sessions', ['sessions'], 100, {});
+	var publish  = mkbar('publish', ['qos 0', 'qos 1', 'qos 2'], 100, {stacked: true});
+	var mem      = mkbar('mem', ['total','processes'], 100, {stacked: true});
+//	var sys      = mkbar('system', ['ports', 'process', 'thread'], 100);
+
+	var statsd = io('http://localhost:3001')
+	statsd.on('timers', function(timers) {
+		//console.log(timers);
+
+		upbar(sessions, {'sessions': timers.gauges['wave.sessions.value']});
+		upbar(publish, {
+			'qos 0': timers.gauges['wave.in.publish.0.one'],
+			'qos 1': timers.gauges['wave.in.publish.1.one'],
+			'qos 2': timers.gauges['wave.in.publish.2.one']
+		});
+		upbar(mem, {
+			'processes': timers.gauges['erlang.memory.processes'],
+			'total': timers.gauges['erlang.memory.total']
+		});
+/*
+		upbar(sys, {
+			'ports'  : timers.gauges['erlang.system_info.port_count'],
+			'process': timers.gauges['erlang.system_info.process_count'],
+			'thread' : timers.gauges['erlang.system_info.thread_pool_size']
+		});
+*/
+	});
+
+</script>
+
+
