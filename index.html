@@ -1,45 +1,100 @@
 
 <html>
 <head>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/rickshaw/1.5.1/rickshaw.min.css" />
     <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
+    <script src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script>
     <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
-    <script src="https://rawgit.com/joewalnes/smoothie/master/smoothie.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/rickshaw/1.5.1/rickshaw.min.js"></script>
+
+	<style>
+	#chart_container {
+			position: relative;
+			font-family: Arial, Helvetica, sans-serif;
+	}
+	#mem {
+			position: relative;
+			left: 40px;
+	}
+	#y_axis {
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			width: 40px;
+	}
+	</style>
 </head>
 <body>
 
-<h1>Erlang VM</h1>
-<h2>Memory</h2>
-<canvas id="memc" width="500" height="100"></canvas>
+	<h1>Erlang VM</h1>
+	<h2>Memory</h2>
+
+	<div id="chart_container">
+			<div id="y_axis"></div>
+			<div id="mem"></div>
+	</div>
 
 </body>
 </html>
 
 <script>
+
+    var seriesData = [ [], [] ];
+    
+    var start = new Date().getTime() / 1000; //getTime -> msecs
+    for(var i = 0; i < 100; i++) {
+        seriesData[0].push({x: start-100+i, y:0});
+        seriesData[1].push({x: start-100+i, y:0});
+    }
+    var palette = new Rickshaw.Color.Palette();// { scheme: 'classic9' } );
+    
+    var graph = new Rickshaw.Graph( {
+        element: document.getElementById("mem"),
+        width: 400, //900
+        height: 60, //500
+        renderer: 'line', //line,area,stack
+        //stack: false,
+        stroke: true,
+        preserve: true,
+        series: [
+            {
+                color: palette.color(),
+                data: seriesData[0],
+                name: 'total'
+            }, {
+                color: palette.color(),
+                data: seriesData[1],
+                name: 'processes'
+            }, 
+        ]
+    } );
+    
+    var axes = new Rickshaw.Graph.Axis.Time( { graph: graph } );
+    var y_axis = new Rickshaw.Graph.Axis.Y( {
+            graph: graph,
+            orientation: 'left',
+            tickFormat: Rickshaw.Fixtures.Number.formatKMBT,
+            element: document.getElementById('y_axis'),
+    } );
+    
+    var hoverDetail = new Rickshaw.Graph.HoverDetail( {
+        graph: graph,
+        //xFormatter: function(x) { return x + "seconds" },
+        yFormatter: function(y) { return Math.round(y/Math.pow(2,20)) + " Mo" }
+    } );
+    
+    graph.render();
+
     var statsd = io('http://localhost:3001')
     statsd.on('timers', function(timers) {
-        memDataSets[0].append(new Date().getTime(), timers.gauges['erlang.memory.processes']);
-        memDataSets[1].append(new Date().getTime(), timers.gauges['erlang.memory.total']);
+        console.log(timers);
+
+        seriesData[0].shift(); seriesData[1].shift();
+        seriesData[0].push({x: new Date().getTime()/1000, y: timers.gauges['erlang.memory.total']});
+        seriesData[1].push({x: new Date().getTime()/1000, y: timers.gauges['erlang.memory.processes']});
+        graph.update();
     });
 
 
-    /** smoothie **/
-    var seriesOptions = [
-      { strokeStyle: 'rgba(255, 0, 0, 1)', fillStyle: 'rgba(255, 0, 0, 0.1)', lineWidth: 3 },
-      { strokeStyle: 'rgba(0, 255, 0, 1)', fillStyle: 'rgba(0, 255, 0, 0.1)', lineWidth: 3 }
-    ];
-    var memDataSets = [new TimeSeries(), new TimeSeries()];
-
-    var now = new Date().getTime();
-    for (var t = now - 1000 * 50; t <= now; t += 1000) {
-        memDataSets[0].append(t, 0);
-        memDataSets[1].append(t, 0);
-    }
-
-    // Build the timeline
-    var timeline = new SmoothieChart({ fps: 30, millisPerPixel: 20, grid: { strokeStyle: '#555555', lineWidth: 1, millisPerLine: 1000, verticalSections: 4}});
-    for (var i = 0; i < memDataSets.length; i++) {
-        timeline.addTimeSeries(memDataSets[i], seriesOptions[i]);
-    }
-    timeline.streamTo(document.getElementById('memc'), 1000);
 </script>
 
