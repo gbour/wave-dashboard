@@ -1,100 +1,142 @@
 
 <html>
 <head>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/rickshaw/1.5.1/rickshaw.min.css" />
-    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.0/jquery.min.js"></script>
     <script src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cubism/1.6.0/cubism.v1.js"></script>
     <script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/rickshaw/1.5.1/rickshaw.min.js"></script>
-
-	<style>
-	#chart_container {
-			position: relative;
-			font-family: Arial, Helvetica, sans-serif;
-	}
-	#mem {
-			position: relative;
-			left: 40px;
-	}
-	#y_axis {
-			position: absolute;
-			top: 0;
-			bottom: 0;
-			width: 40px;
-	}
-	</style>
+    <style>
+    #cub1 {
+        min-height: 155px;
+    }
+</style>
 </head>
 <body>
 
-	<h1>Erlang VM</h1>
-	<h2>Memory</h2>
-
-	<div id="chart_container">
-			<div id="y_axis"></div>
-			<div id="mem"></div>
-	</div>
+<h1>Erlang VM</h1>
+<h2>Memory</h2>
+<div id="cub1"></div>
 
 </body>
 </html>
 
 <script>
-
-    var seriesData = [ [], [] ];
-    
-    var start = new Date().getTime() / 1000; //getTime -> msecs
-    for(var i = 0; i < 100; i++) {
-        seriesData[0].push({x: start-100+i, y:0});
-        seriesData[1].push({x: start-100+i, y:0});
+    dwindow = 20;
+    dstart  = Math.trunc(new Date()/1000) - dwindow;
+    datas = [];
+    for(var i = 0; i < dwindow; i++) {
+        datas[i] = 0;
     }
-    var palette = new Rickshaw.Color.Palette();// { scheme: 'classic9' } );
-    
-    var graph = new Rickshaw.Graph( {
-        element: document.getElementById("mem"),
-        width: 400, //900
-        height: 60, //500
-        renderer: 'line', //line,area,stack
-        //stack: false,
-        stroke: true,
-        preserve: true,
-        series: [
-            {
-                color: palette.color(),
-                data: seriesData[0],
-                name: 'total'
-            }, {
-                color: palette.color(),
-                data: seriesData[1],
-                name: 'processes'
-            }, 
-        ]
-    } );
-    
-    var axes = new Rickshaw.Graph.Axis.Time( { graph: graph } );
-    var y_axis = new Rickshaw.Graph.Axis.Y( {
-            graph: graph,
-            orientation: 'left',
-            tickFormat: Rickshaw.Fixtures.Number.formatKMBT,
-            element: document.getElementById('y_axis'),
-    } );
-    
-    var hoverDetail = new Rickshaw.Graph.HoverDetail( {
-        graph: graph,
-        //xFormatter: function(x) { return x + "seconds" },
-        yFormatter: function(y) { return Math.round(y/Math.pow(2,20)) + " Mo" }
-    } );
-    
-    graph.render();
+    //console.log(dstart, dwindow);
 
     var statsd = io('http://localhost:3001')
     statsd.on('timers', function(timers) {
-        console.log(timers);
+        //console.log(timers);
+        ts = Math.trunc(new Date()/1000);
+        //console.log(ts, dstart);
+        if(ts >= dstart+dwindow) {
+            console.log('sliding');
 
-        seriesData[0].shift(); seriesData[1].shift();
-        seriesData[0].push({x: new Date().getTime()/1000, y: timers.gauges['erlang.memory.total']});
-        seriesData[1].push({x: new Date().getTime()/1000, y: timers.gauges['erlang.memory.processes']});
-        graph.update();
+            for(var i = 0; i < dwindow/2; i++) {
+                datas[i] = datas[i+(dwindow/2)];
+            }
+            // pas nécessaire
+            for(var i = dwindow/2; i < dwindow; i++) {
+                datas[i] = 0;
+            }
+            dstart += dwindow/2
+        }
+
+        datas[ts-dstart] = timers.gauges['erlang.io.input'];
+        //console.log(datas);
     });
 
+    function random(name) {
+      var value = 0,
+          values = [],
+          i = 0,
+          last;
+
+      return context.metric(function(start, stop, step, callback) {
+        start = +start, stop = +stop;
+        if (isNaN(last)) last = start;
+        while (last < stop) {
+          last += step;
+          value = Math.max(-10, Math.min(10, value + .8 * Math.random() - .4 + .2 * Math.cos(i += .2)));
+          values.push(value);
+        }
+        //console.log('>>', values, values.slice((start-stop)/step));
+        callback(null, values = values.slice((start - stop) / step));
+      }, name);
+    }
+
+    function wave() {
+        return context.metric(function(start, stop, step, callback) {
+            start = +start; // convert to milliseconds
+            stop  = +stop;
+            //console.log('w ', start, stop, step, datas[start/1000]);
+            console.log(dstart, start/1000, stop/1000);
+
+            x = 0;
+            var vals = [];
+            for(var i = start; i < stop; i += step) {
+                j = Math.trunc(i/1000);
+
+                var val = datas[j-dstart-1];
+                //var val = datas[j-dstart] - datas[j-dstart-1];
+                if(isNaN(val)) { 
+                    val = 0; 
+                } else if(val != 0) {
+                    val = datas[j-dstart] - val;
+                }
+                vals.push(val);
+            }
+            console.log(vals);
+
+            callback(null, vals);
+        }, 'wavy')
+
+    }
+
+    var context = cubism.context()
+        .serverDelay(0) 
+        .clientDelay(0)
+        .step(1e3)
+        .size(1000); //960
+
+    var horizon = context.horizon()
+        .mode('offset')
+        .height(120)
+        //.format(d3.format(".2f"))
+        .colors(["#08519c","#3182bd","#6baed6","#bdd7e7","#bae4b3","#74c476","#31a354","#006d2c"])
+        .extent([-50000,50000])
+        .title("Network input");
+
+    var foo = random("foo"),
+        bar = wave("bar");
+
+    d3.select("#cub1").call(function(div) {
+
+      div.append("div")
+          .attr("class", "axis")
+          .call(context.axis().orient("top"));
+
+      div.selectAll(".horizon")
+          .data([bar])
+        .enter().append("div")
+          .attr("class", "horizon")
+          .call(horizon); //context.horizon().extent([-20, 20]));
+
+      div.append("div")
+          .attr("class", "rule")
+          .call(context.rule());
+
+    });
+
+
+    // On mousemove, reposition the chart values to match the rule.
+    context.on("focus", function(i) {
+      d3.selectAll(".value").style("right", i == null ? null : context.size() - i + "px");
+    });
 
 </script>
 
